@@ -246,7 +246,7 @@ void onQrCodeTask(void *pvParameters) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   Serial.println("\n\nSystem Booting...");
 
   sserial.begin(57600, SWSERIAL_8N1, 32, 33);
