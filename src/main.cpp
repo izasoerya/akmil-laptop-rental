@@ -7,15 +7,15 @@
 #include <SoftwareSerial.h>
 
 #include "controller_api.h"
+#include "fingerprint_service.h"
 
 EspSoftwareSerial::UART sserial;
-Adafruit_Fingerprint finger = Adafruit_Fingerprint(&sserial);
-String qrId = "";
-String qrName = "";
 
 WebServer server(80);
 ControllerAPI api;
 ESP32QRCodeReader reader(CAMERA_MODEL_WROVER_KITS);
+String qrId = "";
+String qrName = "";
 
 volatile SystemState systemState = LOCKED;
 SemaphoreHandle_t state_mutex;
@@ -28,20 +28,6 @@ SemaphoreHandle_t frame_mutex;
 uint8_t *last_jpeg = nullptr;
 size_t last_jpeg_len = 0;
 String data = "";
-
-int getFingerprintIDez()
-{
-  uint8_t p = finger.getImage();
-  if (p != FINGERPRINT_OK)
-    return -1;
-  p = finger.image2Tz();
-  if (p != FINGERPRINT_OK)
-    return -1;
-  p = finger.fingerFastSearch();
-  if (p != FINGERPRINT_OK)
-    return -2;
-  return finger.fingerID;
-}
 
 void handle_jpg_stream()
 {
@@ -71,10 +57,12 @@ void handle_jpg_stream()
 
 void onFingerprintTask(void *pvParameters)
 {
+  FingerprintService finger;
+  finger.begin();
   while (true)
   {
-    int finger_id = getFingerprintIDez();
-    if (finger_id > 0)
+    int finger_id = finger.matchFinger();
+    if (finger_id)
     {
       Serial.print("Found ID #");
       Serial.println(finger_id);
@@ -224,18 +212,7 @@ void onQrCodeTask(void *pvParameters)
 void setup()
 {
   Serial.begin(9600);
-  Serial.println("\n\nSystem Booting...");
-
   sserial.begin(57600, SWSERIAL_8N1, 32, 33);
-  if (finger.verifyPassword())
-  {
-    Serial.println("Found fingerprint sensor!");
-  }
-  else
-  {
-    Serial.println("Did not find fingerprint sensor :(");
-    return;
-  }
 
   SPIFFS.begin(true);
   api.addStaticSite(server);
