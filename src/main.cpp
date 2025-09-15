@@ -4,6 +4,7 @@
 #include <WebServer.h>
 #include <Adafruit_Fingerprint.h>
 #include <SoftwareSerial.h>
+#include <HTTPClient.h>
 
 // Define the pins for Software Serial
 EspSoftwareSerial::UART sserial;
@@ -13,7 +14,12 @@ WebServer server(80);
 ESP32QRCodeReader reader(CAMERA_MODEL_WROVER_KITS);
 
 // --- State Machine Definition ---
-enum SystemState { LOCKED, UNLOCKED_SCANNING, SUCCESS };
+enum SystemState
+{
+  LOCKED,
+  UNLOCKED_SCANNING,
+  SUCCESS
+};
 volatile SystemState systemState = LOCKED;
 SemaphoreHandle_t state_mutex;
 // ------------------------------
@@ -26,43 +32,52 @@ TaskHandle_t fingerprintTaskHandle = NULL;
 
 // Globals for sharing data between tasks
 SemaphoreHandle_t frame_mutex;
-uint8_t* last_jpeg = nullptr;
+uint8_t *last_jpeg = nullptr;
 size_t last_jpeg_len = 0;
 String data = "";
 
 // Fingerprint reading function
-int getFingerprintIDez() {
+int getFingerprintIDez()
+{
   uint8_t p = finger.getImage();
-  if (p != FINGERPRINT_OK)  return -1;
+  if (p != FINGERPRINT_OK)
+    return -1;
   p = finger.image2Tz();
-  if (p != FINGERPRINT_OK)  return -1;
+  if (p != FINGERPRINT_OK)
+    return -1;
   p = finger.fingerFastSearch();
-  if (p != FINGERPRINT_OK)  return -2;
-  return finger.fingerID; 
+  if (p != FINGERPRINT_OK)
+    return -2;
+  return finger.fingerID;
 }
 
 // --- NEW/MODIFIED Web Server Handlers ---
 
 // NEW: This handler provides the complete system status as JSON
-void handle_status() {
+void handle_status()
+{
   xSemaphoreTake(state_mutex, portMAX_DELAY);
   SystemState currentState = systemState;
   String currentPayload = data;
   xSemaphoreGive(state_mutex);
 
   String stateStr = "LOCKED";
-  if (currentState == UNLOCKED_SCANNING) {
+  if (currentState == UNLOCKED_SCANNING)
+  {
     stateStr = "SCANNING";
-  } else if (currentState == SUCCESS) {
+  }
+  else if (currentState == SUCCESS)
+  {
     stateStr = "SUCCESS";
   }
-  
+
   String json = "{\"state\": \"" + stateStr + "\", \"payload\": \"" + currentPayload + "\"}";
   server.send(200, "application/json", json);
 }
 
 // MODIFIED: This now serves a single page with all UI elements, controlled by JavaScript
-void handle_root() {
+void handle_root()
+{
   String html = R"rawliteral(
     <!DOCTYPE html>
     <html>
@@ -146,17 +161,22 @@ void handle_root() {
   server.send(200, "text/html", html);
 }
 
-void handle_jpg_stream() {
-  if (systemState != UNLOCKED_SCANNING) {
+void handle_jpg_stream()
+{
+  if (systemState != UNLOCKED_SCANNING)
+  {
     server.send(403, "text/plain", "Access Denied: Stream not active.");
     return;
   }
   WiFiClient client = server.client();
   String response = "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n";
   server.sendContent(response);
-  while (client.connected() && systemState == UNLOCKED_SCANNING) {
-    if (xSemaphoreTake(frame_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-      if (last_jpeg && last_jpeg_len > 0) {
+  while (client.connected() && systemState == UNLOCKED_SCANNING)
+  {
+    if (xSemaphoreTake(frame_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+    {
+      if (last_jpeg && last_jpeg_len > 0)
+      {
         server.sendContent("--frame\r\nContent-Type: image/jpeg\r\n\r\n");
         client.write(last_jpeg, last_jpeg_len);
         server.sendContent("\r\n");
@@ -167,52 +187,70 @@ void handle_jpg_stream() {
   }
 }
 
-void startCameraServers() {
+void startCameraServers()
+{
   server.on("/", HTTP_GET, handle_root);
   server.on("/stream", HTTP_GET, handle_jpg_stream);
   server.on("/status", HTTP_GET, handle_status); // NEW endpoint
   server.begin();
 }
 
-
 // --- FreeRTOS Tasks (Logic is unchanged) ---
 
-void onFingerprintTask(void *pvParameters) {
-  while (true) {
+void onFingerprintTask(void *pvParameters)
+{
+  while (true)
+  {
     int finger_id = getFingerprintIDez();
-    if (finger_id > 0) {
-      Serial.print("Found ID #"); Serial.println(finger_id);
-      
+    if (finger_id > 0)
+    {
+      Serial.print("Found ID #");
+      Serial.println(finger_id);
+
       xSemaphoreTake(state_mutex, portMAX_DELAY);
       systemState = UNLOCKED_SCANNING;
       data = "Fingerprint OK. Scan QR Code...";
       xSemaphoreGive(state_mutex);
-      
+
       Serial.println("Resuming Streaming and QR Code tasks...");
       vTaskResume(streamingTaskHandle);
       vTaskResume(qrCodeTaskHandle);
-      
+
       vTaskSuspend(NULL);
     }
     vTaskDelay(50 / portTICK_PERIOD_MS);
   }
 }
 
-void onStreamingTask(void *pvParameters) {
-  while(true) {
-    camera_fb_t *fb = reader.getLastFrameBuffer(); 
-    if (!fb) { vTaskDelay(30 / portTICK_PERIOD_MS); continue; }
+void onStreamingTask(void *pvParameters)
+{
+  while (true)
+  {
+    camera_fb_t *fb = reader.getLastFrameBuffer();
+    if (!fb)
+    {
+      vTaskDelay(30 / portTICK_PERIOD_MS);
+      continue;
+    }
 
     uint8_t *jpg_buf = NULL;
     size_t jpg_len = 0;
-    if (frame2jpg(fb, 12, &jpg_buf, &jpg_len)) {
-      if (xSemaphoreTake(frame_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        if (last_jpeg) free(last_jpeg);
-        last_jpeg = (uint8_t*) malloc(jpg_len);
-        if (last_jpeg) {
+    if (frame2jpg(fb, 12, &jpg_buf, &jpg_len))
+    {
+      if (xSemaphoreTake(frame_mutex, pdMS_TO_TICKS(100)) == pdTRUE)
+      {
+        if (last_jpeg)
+          free(last_jpeg);
+        last_jpeg = (uint8_t *)malloc(jpg_len);
+        if (last_jpeg)
+        {
           memcpy(last_jpeg, jpg_buf, jpg_len);
           last_jpeg_len = jpg_len;
-        } else { last_jpeg_len = 0; }
+        }
+        else
+        {
+          last_jpeg_len = 0;
+        }
         xSemaphoreGive(frame_mutex);
       }
       free(jpg_buf);
@@ -221,41 +259,114 @@ void onStreamingTask(void *pvParameters) {
   }
 }
 
-void onQrCodeTask(void *pvParameters) {
-  struct QRCodeData qrCodeData;
-  while (true) {
-    if (reader.receiveQrCode(&qrCodeData, 100)) {
-      if (qrCodeData.valid) {
-        xSemaphoreTake(state_mutex, portMAX_DELAY);
-        data = String((const char *)qrCodeData.payload);
-        systemState = SUCCESS;
-        Serial.print("QR Payload: "); Serial.println(data);
-        xSemaphoreGive(state_mutex);
+void updateLaptopInfo(int laptop_id, const String &name, int user_id)
+{
+  HTTPClient http;
+  String url = "https://https://jlumxgihbhviwvdhklrw.supabase.co/rest/v1/laptops"; // your endpoint
+  http.begin(url);
+  http.addHeader("apikey", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdW14Z2loYmh2aXd2ZGhrbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NjY2NjQsImV4cCI6MjA3MzQ0MjY2NH0.BTK5cIsLr2NSL1HUVJXCTrkOGcPseh26DbzLgvc7OiY");
+  http.addHeader("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdW14Z2loYmh2aXd2ZGhrbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NjY2NjQsImV4cCI6MjA3MzQ0MjY2NH0.BTK5cIsLr2NSL1HUVJXCTrkOGcPseh26DbzLgvc7OiY");
+  http.addHeader("Content-Type", "application/json");
 
-        vTaskSuspend(streamingTaskHandle);
-        
-        Serial.println("SUCCESS! Displaying payload for 30 seconds, then resetting.");
-        vTaskDelay(30000 / portTICK_PERIOD_MS);
+  String payload = "{"
+                   "\"laptop_id\": " +
+                   String(laptop_id) + "," // int, no quotes
+                                       "\"name\": \"" +
+                   name + "\"," // string
+                          "\"user_id\": " +
+                   String(user_id) + // int, no quotes
+                   "}";
 
-        Serial.println("Resetting MCU now...");
-        ESP.restart();
-      }
-    }
-    vTaskDelay(250 / portTICK_PERIOD_MS); 
+  int httpResponseCode = http.PATCH(payload); // PATCH or POST depending on your API
+
+  if (httpResponseCode > 0)
+  {
+    String response = http.getString();
+    Serial.println("Supabase response: " + response);
+  }
+  else
+  {
+    Serial.println("Error on sending request: " + String(httpResponseCode));
+  }
+  http.end();
+}
+
+void processQrPayload(const String &qrPayload)
+{
+  int start = 0;
+  while (start < qrPayload.length())
+  {
+    int semi = qrPayload.indexOf(';', start);
+    if (semi == -1)
+      break; // no more records
+
+    String record = qrPayload.substring(start, semi);
+    start = semi + 1;
+
+    int c1 = record.indexOf(',');
+    int c2 = record.indexOf(',', c1 + 1);
+
+    if (c1 == -1 || c2 == -1)
+      continue; // invalid
+
+    int laptop_id = record.substring(0, c1).toInt();
+    String name = record.substring(c1 + 1, c2);
+    int user_id = record.substring(c2 + 1).toInt();
+
+    Serial.printf("Parsed record -> laptop_id=%d, name=%s, user_id=%d\n",
+                  laptop_id, name.c_str(), user_id);
+
+    updateLaptopInfo(laptop_id, name, user_id);
   }
 }
 
-void setup() {
+void onQrCodeTask(void *pvParameters)
+{
+  struct QRCodeData qrCodeData;
+  while (true)
+  {
+    if (reader.receiveQrCode(&qrCodeData, 100))
+    {
+      if (qrCodeData.valid)
+      {
+        xSemaphoreTake(state_mutex, portMAX_DELAY);
+        data = String((const char *)qrCodeData.payload); // raw payload string
+        systemState = SUCCESS;
+        xSemaphoreGive(state_mutex);
+
+        Serial.print("QR Payload: ");
+        Serial.println(data);
+
+        vTaskSuspend(streamingTaskHandle);
+        processQrPayload(data);
+
+        Serial.println("SUCCESS! Displaying payload for 30 seconds, then resetting.");
+        vTaskDelay(30000 / portTICK_PERIOD_MS);
+        ESP.restart();
+      }
+    }
+    vTaskDelay(250 / portTICK_PERIOD_MS);
+  }
+}
+
+void setup()
+{
   Serial.begin(9600);
   Serial.println("\n\nSystem Booting...");
 
   sserial.begin(57600, SWSERIAL_8N1, 32, 33);
   delay(100);
-  if (finger.verifyPassword()) {
+  if (finger.verifyPassword())
+  {
     Serial.println("Found fingerprint sensor!");
-  } else {
+  }
+  else
+  {
     Serial.println("Did not find fingerprint sensor :(");
-    while (1) { delay(1); }
+    while (1)
+    {
+      delay(1);
+    }
   }
 
   frame_mutex = xSemaphoreCreateMutex();
@@ -267,7 +378,8 @@ void setup() {
   Serial.println("Begin on Core 1");
 
   WiFi.begin("Subhanallah", "muhammadnabiyullah");
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED)
+  {
     delay(500);
     Serial.print(".");
   }
@@ -287,6 +399,7 @@ void setup() {
   vTaskSuspend(qrCodeTaskHandle);
 }
 
-void loop() {
+void loop()
+{
   server.handleClient();
 }
