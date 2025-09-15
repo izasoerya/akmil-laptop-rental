@@ -3,12 +3,15 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Adafruit_Fingerprint.h>
+#include <HTTPClient.h>
 #include <SoftwareSerial.h>
 
 #include "controller_api.h"
 
 EspSoftwareSerial::UART sserial;
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&sserial);
+String qrId = "";
+String qrName = "";
 
 WebServer server(80);
 ControllerAPI api;
@@ -128,6 +131,67 @@ void onStreamingTask(void *pvParameters)
   }
 }
 
+void updateLaptopInfo(int laptop_id, const String &name, int user_id)
+{
+  HTTPClient http;
+  String url = "https://https://jlumxgihbhviwvdhklrw.supabase.co/rest/v1/laptops"; // your endpoint
+  http.begin(url);
+  http.addHeader("apikey", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdW14Z2loYmh2aXd2ZGhrbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NjY2NjQsImV4cCI6MjA3MzQ0MjY2NH0.BTK5cIsLr2NSL1HUVJXCTrkOGcPseh26DbzLgvc7OiY");
+  http.addHeader("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdW14Z2loYmh2aXd2ZGhrbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NjY2NjQsImV4cCI6MjA3MzQ0MjY2NH0.BTK5cIsLr2NSL1HUVJXCTrkOGcPseh26DbzLgvc7OiY");
+  http.addHeader("Content-Type", "application/json");
+
+  String payload = "{"
+                   "\"laptop_id\": " +
+                   String(laptop_id) + "," // int, no quotes
+                                       "\"name\": \"" +
+                   name + "\"," // string
+                          "\"user_id\": " +
+                   String(user_id) + // int, no quotes
+                   "}";
+
+  int httpResponseCode = http.PATCH(payload); // PATCH or POST depending on your API
+
+  if (httpResponseCode > 0)
+  {
+    String response = http.getString();
+    Serial.println("Supabase response: " + response);
+  }
+  else
+  {
+    Serial.println("Error on sending request: " + String(httpResponseCode));
+  }
+  http.end();
+}
+
+void processQrPayload(const String &qrPayload)
+{
+  int start = 0;
+  while (start < qrPayload.length())
+  {
+    int semi = qrPayload.indexOf(';', start);
+    if (semi == -1)
+      break; // no more records
+
+    String record = qrPayload.substring(start, semi);
+    start = semi + 1;
+
+    int c1 = record.indexOf(',');
+    int c2 = record.indexOf(',', c1 + 1);
+
+    if (c1 == -1 || c2 == -1)
+      continue; // invalid
+
+    int laptop_id = record.substring(0, c1).toInt();
+    String name = record.substring(c1 + 1, c2);
+    int user_id = record.substring(c2 + 1).toInt();
+
+    Serial.printf("Parsed record -> laptop_id=%d, name=%s, user_id=%d\n",
+                  laptop_id, name.c_str(), user_id);
+
+    updateLaptopInfo(laptop_id, name, user_id);
+  }
+}
+
 void onQrCodeTask(void *pvParameters)
 {
   struct QRCodeData qrCodeData;
@@ -138,18 +202,18 @@ void onQrCodeTask(void *pvParameters)
       if (qrCodeData.valid)
       {
         xSemaphoreTake(state_mutex, portMAX_DELAY);
-        data = String((const char *)qrCodeData.payload);
+        data = String((const char *)qrCodeData.payload); // raw payload string
         systemState = SUCCESS;
-        Serial.print("QR Payload: ");
-        Serial.println(data);
         xSemaphoreGive(state_mutex);
 
+        Serial.print("QR Payload: ");
+        Serial.println(data);
+
         vTaskSuspend(streamingTaskHandle);
+        processQrPayload(data);
 
         Serial.println("SUCCESS! Displaying payload for 30 seconds, then resetting.");
         vTaskDelay(30000 / portTICK_PERIOD_MS);
-
-        Serial.println("Resetting MCU now...");
         ESP.restart();
       }
     }
