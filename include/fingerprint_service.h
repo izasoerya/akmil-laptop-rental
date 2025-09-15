@@ -42,7 +42,82 @@ public:
             }
         }
     }
-    void enrollFinger() {}
+
+    bool enrollFinger(int id)
+    {
+        Serial.println("Waiting for valid finger to enroll as ID #" + String(id));
+        int p = -1;
+        Serial.println("Place finger on sensor...");
+        while (p != FINGERPRINT_OK)
+        {
+            p = finger.getImage();
+            if (p == FINGERPRINT_NOFINGER)
+            {
+                delay(50);
+            }
+            else if (p != FINGERPRINT_OK)
+            {
+                Serial.println("Error capturing image. Try again.");
+                return false;
+            }
+        }
+
+        p = finger.image2Tz(1);
+        if (p != FINGERPRINT_OK)
+        {
+            Serial.println("Error converting image. Try again.");
+            return false;
+        }
+
+        Serial.println("Remove finger...");
+        while (finger.getImage() != FINGERPRINT_NOFINGER)
+        {
+            delay(50);
+        }
+
+        Serial.println("Place same finger again...");
+        p = -1;
+        while (p != FINGERPRINT_OK)
+        {
+            p = finger.getImage();
+            if (p == FINGERPRINT_NOFINGER)
+            {
+                delay(50);
+            }
+            else if (p != FINGERPRINT_OK)
+            {
+                Serial.println("Error capturing image. Try again.");
+                return false;
+            }
+        }
+
+        p = finger.image2Tz(2);
+        if (p != FINGERPRINT_OK)
+        {
+            Serial.println("Error converting image. Try again.");
+            return false;
+        }
+
+        p = finger.createModel();
+        if (p != FINGERPRINT_OK)
+        {
+            Serial.println("Error creating model. Try again.");
+            return false;
+        }
+
+        p = finger.storeModel(id);
+        if (p == FINGERPRINT_OK)
+        {
+            Serial.println("Fingerprint enrolled successfully!");
+            return true;
+        }
+        else
+        {
+            Serial.println("Error storing fingerprint. Try again.");
+            return false;
+        }
+    }
+
     int matchFinger()
     {
         int finger_id = getFingerprintIDez();
