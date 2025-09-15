@@ -6,6 +6,8 @@
 
 enum SystemState
 {
+    ENROLL,
+    WAITING_ENROLL,
     LOCKED,
     UNLOCKED_SCANNING,
     SUCCESS
@@ -19,9 +21,10 @@ public:
 
     void addStaticSite(WebServer &server)
     {
-        server.serveStatic("/", SPIFFS, "/index.html");
+        server.serveStatic("/", SPIFFS, "/root.html");
+        server.serveStatic("/enroll_fingerprint.html", SPIFFS, "/enroll_fingerprint.html");
+        server.serveStatic("/waiting_fingerprint.html", SPIFFS, "/waiting_fingerprint.html");
         server.serveStatic("/locked_page.html", SPIFFS, "/locked_page.html");
-        server.serveStatic("/qr_recognition.html", SPIFFS, "/qr_recognition.html");
         server.serveStatic("/success_page.html", SPIFFS, "/success_page.html");
     }
 
