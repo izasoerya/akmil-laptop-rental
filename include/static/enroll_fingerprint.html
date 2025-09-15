@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Enroll Fingerprint</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: linear-gradient(135deg, #e0e7ff 0%, #f8fafc 100%);
+        min-height: 100vh;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .container {
+        background: #fff;
+        padding: 40px 32px;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(60, 72, 88, 0.12);
+        text-align: center;
+        min-width: 320px;
+      }
+      h2 {
+        color: #2563eb;
+        font-size: 2rem;
+        margin-bottom: 16px;
+        letter-spacing: 1px;
+      }
+      p {
+        color: #555;
+        font-size: 1.1rem;
+        margin-bottom: 24px;
+      }
+      input[type="number"] {
+        padding: 12px;
+        width: 120px;
+        font-size: 1rem;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        margin-bottom: 20px;
+      }
+      .enroll-btn {
+        background: linear-gradient(90deg, #2563eb 0%, #22d3ee 100%);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 14px 32px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+        transition: background 0.2s, transform 0.2s;
+      }
+      .enroll-btn:hover {
+        background: linear-gradient(90deg, #22d3ee 0%, #2563eb 100%);
+        transform: translateY(-2px) scale(1.04);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Enroll Fingerprint</h2>
+      <p>Enter a Fingerprint ID number (1–127)</p>
+      <input id="fingerId" type="number" min="1" max="127" required />
+      <br />
+      <button class="enroll-btn" onclick="startEnrollment()">Enroll</button>
+    </div>
+
+    <script>
+      function startEnrollment() {
+        const id = document.getElementById("fingerId").value;
+        if (!id) {
+          alert("Please enter a valid ID.");
+          return;
+        }
+        // Redirect to ESP endpoint -> should serve waiting page
+        window.location.href = `/wait-enroll?id=${id}`;
+      }
+    </script>
+  </body>
+</html>

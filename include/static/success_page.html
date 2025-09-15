@@ -1,15 +1,57 @@
-<div id="success-ui">
-  <h2>SUCCESS!</h2>
-  <h3>QR Code Payload:</h3>
-  <div
-    id="success-payload"
-    style="
-      font-size: 1.5em;
-      color: green;
-      border: 2px solid green;
-      padding: 10px;
-      display: inline-block;
-    "
-  ></div>
-  <p style="margin-top: 20px">This device will automatically reset.</p>
-</div>
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Success</title>
+    <style>
+      body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: linear-gradient(135deg, #e0e7ff 0%, #f8fafc 100%);
+        min-height: 100vh;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .container {
+        background: #fff;
+        padding: 40px 32px;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(60, 72, 88, 0.12);
+        text-align: center;
+        min-width: 360px;
+      }
+      h2 {
+        color: #16a34a;
+        font-size: 2rem;
+        margin-bottom: 12px;
+      }
+      h3 {
+        color: #2563eb;
+        font-size: 1.2rem;
+        margin-bottom: 12px;
+      }
+      #success-payload {
+        font-size: 1.5em;
+        color: #16a34a;
+        border: 2px solid #16a34a;
+        padding: 12px 20px;
+        border-radius: 8px;
+        display: inline-block;
+        margin-bottom: 20px;
+      }
+      p {
+        color: #555;
+        font-size: 1rem;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container" id="success-ui">
+      <h2>SUCCESS!</h2>
+      <h3>QR Code Payload:</h3>
+      <div id="success-payload"></div>
+      <p>This device will automatically reset in 30 Second.</p>
+    </div>
+  </body>
+</html>

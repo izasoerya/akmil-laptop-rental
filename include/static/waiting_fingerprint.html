@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>Scan QR Code</title>
+    <title>Enroll Fingerprint - Waiting</title>
     <style>
       body {
         font-family: "Segoe UI", Arial, sans-serif;
@@ -18,32 +18,19 @@
         border-radius: 16px;
         box-shadow: 0 8px 32px rgba(60, 72, 88, 0.12);
         text-align: center;
-        min-width: 360px;
+        min-width: 320px;
       }
       h2 {
         color: #2563eb;
         font-size: 2rem;
-        margin-bottom: 16px;
-        letter-spacing: 1px;
-      }
-      h3 {
-        color: #555;
-        font-size: 1.2rem;
-        margin-top: 20px;
-      }
-      img {
-        border: 2px solid #2563eb;
-        border-radius: 12px;
-        max-width: 100%;
-        height: auto;
-        margin-top: 20px;
+        margin-bottom: 20px;
       }
       .spinner {
         margin: 20px auto;
-        width: 40px;
-        height: 40px;
-        border: 4px solid #ddd;
-        border-top: 4px solid #2563eb;
+        width: 50px;
+        height: 50px;
+        border: 6px solid #ddd;
+        border-top: 6px solid #2563eb;
         border-radius: 50%;
         animation: spin 1s linear infinite;
       }
@@ -55,14 +42,18 @@
           transform: rotate(360deg);
         }
       }
+      p {
+        font-size: 1.1rem;
+        color: #555;
+        margin-top: 20px;
+      }
     </style>
   </head>
   <body>
-    <div class="container" id="scanning-ui">
-      <h2>Scan QR Code</h2>
-      <img src="/stream" alt="QR Camera Stream" />
+    <div class="container">
+      <h2>Waiting for Enrollment</h2>
       <div class="spinner"></div>
-      <h3 id="status-text">Waiting for QR scan...</h3>
+      <p>Place your finger on the sensor until the process finishes...</p>
     </div>
   </body>
 </html>
