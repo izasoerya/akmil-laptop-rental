@@ -9,25 +9,28 @@
 #include "controller_api.h"
 #include "fingerprint_service.h"
 
+// Fingerprint
+FingerprintService finger;
 EspSoftwareSerial::UART sserial;
 
+// Webserver
 WebServer server(80);
 ControllerAPI api;
 ESP32QRCodeReader reader(CAMERA_MODEL_WROVER_KITS);
-String qrId = "";
-String qrName = "";
 
+// State Machine
 volatile SystemState systemState = LOCKED;
 SemaphoreHandle_t state_mutex;
 
+// Task handle
 TaskHandle_t streamingTaskHandle = NULL;
 TaskHandle_t qrCodeTaskHandle = NULL;
 TaskHandle_t fingerprintTaskHandle = NULL;
 
+// Image Stream
 SemaphoreHandle_t frame_mutex;
 uint8_t *last_jpeg = nullptr;
 size_t last_jpeg_len = 0;
-String data = "";
 
 void handle_jpg_stream()
 {
@@ -57,8 +60,6 @@ void handle_jpg_stream()
 
 void onFingerprintTask(void *pvParameters)
 {
-  FingerprintService finger;
-  finger.begin();
   while (true)
   {
     int finger_id = finger.matchFinger();
@@ -69,7 +70,6 @@ void onFingerprintTask(void *pvParameters)
 
       xSemaphoreTake(state_mutex, portMAX_DELAY);
       systemState = UNLOCKED_SCANNING;
-      data = "Fingerprint OK. Scan QR Code...";
       xSemaphoreGive(state_mutex);
 
       Serial.println("Resuming Streaming and QR Code tasks...");
@@ -190,15 +190,15 @@ void onQrCodeTask(void *pvParameters)
       if (qrCodeData.valid)
       {
         xSemaphoreTake(state_mutex, portMAX_DELAY);
-        data = String((const char *)qrCodeData.payload); // raw payload string
+        String qrData = String((const char *)qrCodeData.payload); // raw payload string
         systemState = SUCCESS;
         xSemaphoreGive(state_mutex);
 
         Serial.print("QR Payload: ");
-        Serial.println(data);
+        Serial.println(qrData);
 
         vTaskSuspend(streamingTaskHandle);
-        processQrPayload(data);
+        processQrPayload(qrData);
 
         Serial.println("SUCCESS! Displaying payload for 30 seconds, then resetting.");
         vTaskDelay(30000 / portTICK_PERIOD_MS);
@@ -214,9 +214,7 @@ void setup()
   Serial.begin(9600);
   sserial.begin(57600, SWSERIAL_8N1, 32, 33);
 
-  SPIFFS.begin(true);
-  api.addStaticSite(server);
-  api.startWebServer(server, systemState);
+  finger.begin();
 
   frame_mutex = xSemaphoreCreateMutex();
   state_mutex = xSemaphoreCreateMutex();
@@ -234,10 +232,30 @@ void setup()
   }
   Serial.println("\nWiFi connected");
 
+  SPIFFS.begin(true);
+  api.addStaticSite(server);
+  server.on("/stream", HTTP_GET, []()
+            { handle_jpg_stream(); });
+  server.on("/wait-enroll", HTTP_GET, []()
+            {
+    if (server.hasArg("id")) {
+      int id = server.arg("id").toInt();
+      bool auth = finger.enrollFinger(id);
+      if (auth) {
+        xSemaphoreTake(state_mutex, pdMS_TO_TICKS(10));
+        systemState = LOCKED;
+        xSemaphoreGive(state_mutex);
+      }
+      server.sendHeader("Location", "/");
+      server.send(302, "text/plain", "");
+    } else {
+      server.send(400, "text/plain", "Missing 'id' parameter");
+    } });
+  api.startWebServer(server, systemState);
+
   Serial.print("Web Server Ready! Use 'http://");
   Serial.print(WiFi.localIP());
   Serial.println("' to connect");
-  Serial.println("System is LOCKED. Waiting for fingerprint...");
 
   xTaskCreatePinnedToCore(onFingerprintTask, "Fingerprint", 4 * 1024, NULL, 4, &fingerprintTaskHandle, 0);
   xTaskCreate(onStreamingTask, "Streaming", 4 * 1024, NULL, 5, &streamingTaskHandle);
