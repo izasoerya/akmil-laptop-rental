@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>ESP32 Security System</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin-top: 50px;
+      }
+      #content {
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>ESP32 Security System</h1>
+    <div id="content">Loading...</div>
+
+    <script>
+      let currentState = "";
+
+      async function loadPage(page) {
+        try {
+          const res = await fetch(page);
+          const html = await res.text();
+          document.getElementById("content").innerHTML = html;
+        } catch (err) {
+          document.getElementById("content").innerHTML =
+            "<p style='color:red'>Failed to load " + page + "</p>";
+        }
+      }
+
+      async function checkStatus() {
+        try {
+          const res = await fetch("/status");
+          const data = await res.json();
+
+          if (data.state !== currentState) {
+            currentState = data.state;
+            if (currentState === "LOCKED") {
+              loadPage("/locked_page.html");
+            } else if (currentState === "UNLOCKED_SCANNING") {
+              loadPage("/qr_recognition.html");
+            } else if (currentState === "SUCCESS") {
+              loadPage("/success_page.html");
+            }
+          }
+
+          // Update payload if needed
+          if (currentState === "UNLOCKED_SCANNING") {
+            const el = document.getElementById("status-text");
+            if (el) el.textContent = data.payload;
+          } else if (currentState === "SUCCESS") {
+            const el = document.getElementById("success-payload");
+            if (el) el.textContent = data.payload;
+          }
+        } catch (err) {
+          console.error("Status fetch failed", err);
+        }
+      }
+
+      setInterval(checkStatus, 1500);
+      checkStatus();
+    </script>
+  </body>
+</html>
