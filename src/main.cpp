@@ -613,7 +613,7 @@ void setup()
 {
 	Serial.begin(115200);
 	Serial.println("\n\nSystem Booting...");
-	sserial.begin(57600, SWSERIAL_8N1, 32, 33);
+	sserial.begin(57600, SWSERIAL_8N1, 33, 32);
 	delay(100);
 	finger.begin(57600);
 	if (!finger.verifyPassword())
