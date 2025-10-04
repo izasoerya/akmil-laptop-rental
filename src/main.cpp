@@ -6,6 +6,8 @@
 #include <Adafruit_Fingerprint.h>
 #include <SoftwareSerial.h>
 #include <HTTPClient.h>
+#include <esp_task_wdt.h>
+#include <WiFiClientSecure.h> // Required for insecure client
 
 // Define the pins for Software Serial
 EspSoftwareSerial::UART sserial;
@@ -58,8 +60,6 @@ int getFingerprintIDez()
 }
 
 // --- ASYNC WEB HANDLERS ---
-
-// CORRECTION 1: JavaScript for the main page has been restored.
 void handle_root(AsyncWebServerRequest *request)
 {
 	String html = R"rawliteral(
@@ -145,14 +145,12 @@ void handle_root(AsyncWebServerRequest *request)
         const eventSource = new EventSource('/events');
         eventSource.addEventListener('status', (event) => {
           const statusData = JSON.parse(event.data);
-          // Only update UI if not in enrollment page
           if (window.location.pathname !== '/enroll') {
               updateUI(statusData);
           }
         });
         eventSource.onerror = (err) => { console.error('EventSource failed:', err); };
         
-        // Initial UI setup on page load
         updateUI({state: 'LOCKED', payload: ''});
       </script>
     </body>
@@ -161,7 +159,6 @@ void handle_root(AsyncWebServerRequest *request)
 	request->send(200, "text/html", html);
 }
 
-// Handler for the enrollment page (Unchanged)
 void handle_enroll_page(AsyncWebServerRequest *request)
 {
 	String html = R"rawliteral(
@@ -236,7 +233,6 @@ void handle_enroll_page(AsyncWebServerRequest *request)
 	request->send(200, "text/html", html);
 }
 
-// Handler to start enrollment process (Unchanged)
 void onEnrollmentTask(void *pvParameters);
 void handle_start_enroll(AsyncWebServerRequest *request)
 {
@@ -271,7 +267,6 @@ void handle_start_enroll(AsyncWebServerRequest *request)
 	}
 }
 
-// CORRECTION 2: Fixed the lambda capture for jpeg_len, which would cause a compile error.
 void handle_jpg(AsyncWebServerRequest *request)
 {
 	xSemaphoreTake(state_mutex, portMAX_DELAY);
@@ -305,10 +300,10 @@ void handle_jpg(AsyncWebServerRequest *request)
 	{
 		AsyncWebServerResponse *response = request->beginResponse("image/jpeg", jpeg_len, [jpeg_copy, jpeg_len](uint8_t *buffer, size_t maxLen, size_t index) -> size_t
 																  {
-      size_t len = jpeg_len - index;
-      if (len > maxLen) len = maxLen;
-      memcpy(buffer, jpeg_copy + index, len);
-      return len; });
+            size_t len = jpeg_len - index;
+            if (len > maxLen) len = maxLen;
+            memcpy(buffer, jpeg_copy + index, len);
+            return len; });
 		request->onDisconnect([jpeg_copy]()
 							  { free(jpeg_copy); });
 		request->send(response);
@@ -328,25 +323,25 @@ void startCameraServers()
 
 	events.onConnect([](AsyncEventSourceClient *client)
 					 {
-    if(client->lastId()){
-      Serial.printf("Client reconnected! Last message ID: %u\n", client->lastId());
-    }
-    xSemaphoreTake(state_mutex, portMAX_DELAY);
-    SystemState currentState = systemState;
-    String currentPayload = data;
-    xSemaphoreGive(state_mutex);
-    
-    String stateStr = "LOCKED";
-    if (currentState == UNLOCKED_SCANNING) stateStr = "SCANNING";
-    else if (currentState == SUCCESS) stateStr = "SUCCESS";
-    else if (currentState == ENROLLING) stateStr = "ENROLLING";
+        if(client->lastId()){
+          Serial.printf("Client reconnected! Last message ID: %u\n", client->lastId());
+        }
+        xSemaphoreTake(state_mutex, portMAX_DELAY);
+        SystemState currentState = systemState;
+        String currentPayload = data;
+        xSemaphoreGive(state_mutex);
+        
+        String stateStr = "LOCKED";
+        if (currentState == UNLOCKED_SCANNING) stateStr = "SCANNING";
+        else if (currentState == SUCCESS) stateStr = "SUCCESS";
+        else if (currentState == ENROLLING) stateStr = "ENROLLING";
 
-    String json_status = "{\"state\":\"" + stateStr + "\", \"payload\":\"" + currentPayload + "\"}";
-    client->send(json_status.c_str(), "status", millis());
+        String json_status = "{\"state\":\"" + stateStr + "\", \"payload\":\"" + currentPayload + "\"}";
+        client->send(json_status.c_str(), "status", millis());
 
-    if (currentState == ENROLLING) {
-        client->send("{\"status\":\"wait\", \"message\":\"Enrollment in progress...\"}", "enroll_status", millis());
-    } });
+        if (currentState == ENROLLING) {
+            client->send("{\"status\":\"wait\", \"message\":\"Enrollment in progress...\"}", "enroll_status", millis());
+        } });
 
 	server.addHandler(&events);
 	server.begin();
@@ -422,6 +417,14 @@ void onFingerprintTask(void *pvParameters)
 	while (true)
 	{
 		int finger_id = getFingerprintIDez();
+		if (Serial.available() > 0)
+		{
+			if (Serial.readString() == "RESTART")
+			{
+				Serial.println("Restart ESP");
+				ESP.restart();
+			}
+		}
 		if (finger_id > 0)
 		{
 			Serial.printf("Fingerprint match found. User ID: %d\n", finger_id);
@@ -483,18 +486,35 @@ void onStreamingTask(void *pvParameters)
 
 void updateLaptopUser(int laptop_id, int user_id)
 {
+	// Add this line to see the available memory right before the HTTPS call.
+	Serial.printf("!!! Before HTTPS call, Free Heap: %d bytes\n", esp_get_free_heap_size());
+
 	if (WiFi.status() != WL_CONNECTED)
 	{
 		Serial.println("WiFi not connected, skipping Supabase update.");
 		return;
 	}
+
+	// --- MODIFICATION START ---
+	// Create a WiFiClientSecure object
+	WiFiClientSecure client;
+
+	// Disable certificate validation (INSECURE!)
+	client.setInsecure();
+	// --- MODIFICATION END ---
+
 	HTTPClient http;
+
 	String url = "https://jlumxgihbhviwvdhklrw.supabase.co/rest/v1/laptop_acc?id=eq." + String(laptop_id);
-	http.begin(url);
+
+	// Pass the insecure client to http.begin()
+	http.begin(client, url);
+
 	http.addHeader("apikey", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdW14Z2loYmh2aXd2ZGhrbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NjY2NjQsImV4cCI6MjA3MzQ0MjY2NH0.BTK5cIsLr2NSL1HUVJXCTrkOGcPseh26DbzLgvc7OiY");
 	http.addHeader("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdW14Z2loYmh2aXd2ZGhrbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NjY2NjQsImV4cCI6MjA3MzQ0MjY2NH0.BTK5cIsLr2NSL1HUVJXCTrkOGcPseh26DbzLgvc7OiY");
 	http.addHeader("Content-Type", "application/json");
 	http.addHeader("Prefer", "return=representation");
+
 	int httpResponseCode = http.GET();
 	if (httpResponseCode == 200)
 	{
@@ -510,7 +530,10 @@ void updateLaptopUser(int laptop_id, int user_id)
 				isNull = true;
 		}
 		http.end();
-		http.begin(url);
+
+		// Pass the same insecure client to the second http.begin() call
+		http.begin(client, url);
+
 		http.addHeader("apikey", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdW14Z2loYmh2aXd2ZGhrbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NjY2NjQsImV4cCI6MjA3MzQ0MjY2NH0.BTK5cIsLr2NSL1HUVJXCTrkOGcPseh26DbzLgvc7OiY");
 		http.addHeader("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdW14Z2loYmh2aXd2ZGhrbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NjY2NjQsImV4cCI6MjA3MzQ0MjY2NH0.BTK5cIsLr2NSL1HUVJXCTrkOGcPseh26DbzLgvc7OiY");
 		http.addHeader("Content-Type", "application/json");
@@ -611,9 +634,10 @@ void onQrCodeTask(void *pvParameters)
 
 void setup()
 {
-	Serial.begin(115200);
+	Serial.begin(9600);
 	Serial.println("\n\nSystem Booting...");
 	sserial.begin(57600, SWSERIAL_8N1, 33, 32);
+
 	delay(100);
 	finger.begin(57600);
 	if (!finger.verifyPassword())
@@ -631,7 +655,7 @@ void setup()
 	Serial.println("Setup QRCode Reader");
 	reader.beginOnCore(1);
 	Serial.println("Begin on Core 1");
-	WiFi.begin("Subhanallah5", "muhammadnabiyullah");
+	WiFi.begin("QRent", "QRENTQRENT");
 	while (WiFi.status() != WL_CONNECTED)
 	{
 		delay(500);
